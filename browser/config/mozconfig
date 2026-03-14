@@ -7,3 +7,12 @@
 # to the top of your mozconfig file.
 
 ac_add_options --enable-project=browser
+ac_add_options --enable-linker=lld
+ac_add_options --enable-debug-symbols=false
+ac_add_options MOZ_LTO=
+ac_add_options --enable-artifact-builds=false
+ac_add_options --disable-tests
+ac_add_options --disable-debug
+ac_add_options --enable-optimize
+ac_add_options --without-wasm-sandboxed-libraries
+mk_add_options MOZ_MAKE_FLAGS="-j4"
