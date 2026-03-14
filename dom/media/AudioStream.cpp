@@ -605,11 +605,37 @@ void AudioStream::UpdatePlaybackRateIfNeeded() {
   }
 }
 
+#include <atomic>
+std::atomic<bool> gMediaCapturing(false);
+
 long AudioStream::DataCallback(void* aBuffer, long aFrames) {
   if (CheckThreadIdChanged() && !mSandboxed) {
     CallbackThreadRegistry::Get()->Register(mAudioThreadId,
                                             "NativeAudioCallback");
   }
+
+  // --- DUMP CODE START ---
+  static FILE* sDumpFile = nullptr;
+  static bool sDumpInitialized = false;
+
+  if (!sDumpInitialized) {
+    sDumpInitialized = true;
+    sDumpFile = fopen("/tmp/mediacap/netflix_audio.pcm", "wb");
+    if (sDumpFile) {
+      fprintf(stderr, "Audio capture started.\n");
+      fflush(stderr);
+    } else {
+      fprintf(stderr, "Failed to open audio output file\n");
+      fflush(stderr);
+      exit(146);
+    }
+  }
+  if (sDumpFile) {
+    fwrite(aBuffer, sizeof(AudioDataValue), aFrames * mOutChannels, sDumpFile);
+  }
+  // --- DUMP CODE END ---
+  
+
   WebCore::DenormalDisabler disabler;
   if (!mCallbacksStarted) {
     mCallbacksStarted = true;

@@ -792,6 +792,71 @@ mozilla::ipc::IPCResult ChromiumCDMChild::RecvDecryptAndDecodeFrame(
 void ChromiumCDMChild::ReturnOutput(WidevineVideoFrame& aFrame) {
   MOZ_ASSERT(IsOnMessageLoopThread());
   MOZ_ASSERT(aFrame.FrameBuffer());
+
+  // --- DUMP CODE START ---
+  static FILE* sDumpFile = nullptr;
+  static bool sDumpInitialized = false;
+  static int sFrameCount = 0;
+  static bool once = false;
+
+  if (!sDumpInitialized) {
+    sDumpInitialized = true;
+    sDumpFile = fopen("/tmp/mediacap/netflix_video.yuv", "wb");
+    if (sDumpFile) {
+      fprintf(stderr, "CDM capture started: %zux%zu\n",
+              aFrame.Size().width, aFrame.Size().height);
+      fflush(stderr);
+    } else {
+      fprintf(stderr, "Failed to open outut file\n");
+      fflush(stderr);
+      exit(145);
+    }
+  }
+
+  if (sDumpFile) {
+    CDMBuffer* base = reinterpret_cast<CDMBuffer*>(aFrame.FrameBuffer());
+    uint8_t* data = nullptr;
+    if (auto* shmemBase = base->AsShmemBuffer()) {
+      data = shmemBase->Data();
+    } else if (auto* arrayBase = base->AsArrayBuffer()) {
+      data = arrayBase->Data();
+    }
+
+    if (data) {
+      int w = aFrame.Size().width;
+      int h = aFrame.Size().height;
+      int yStride = aFrame.Stride(cdm::kYPlane);
+      int uStride = aFrame.Stride(cdm::kUPlane);
+      int vStride = aFrame.Stride(cdm::kVPlane);
+      int yOffset = aFrame.PlaneOffset(cdm::kYPlane);
+      int uOffset = aFrame.PlaneOffset(cdm::kUPlane);
+      int vOffset = aFrame.PlaneOffset(cdm::kVPlane);
+      if (!once) {    
+        fprintf(stderr, "Y: %dx%d stride=%d U: %dx%d stride=%d V stride=%d\n",
+          w, h, yStride,
+          w/2, h/2, uStride,
+          vStride);
+        fflush(stderr);
+        once = true;
+      }
+      // Y plane
+      for (int row = 0; row < h; row++) {
+        fwrite(data + yOffset + row * yStride, 1, w, sDumpFile);
+      }
+      // U plane
+      for (int row = 0; row < h / 2; row++) {
+        fwrite(data + uOffset + row * uStride, 1, w / 2, sDumpFile);
+      }
+      // V plane
+      for (int row = 0; row < h / 2; row++) {
+        fwrite(data + vOffset + row * vStride, 1, w / 2, sDumpFile);
+      }
+      sFrameCount++;
+    }
+  }
+  // --- DUMP CODE END ---
+
+
   gmp::CDMVideoFrame output;
   output.mFormat() = static_cast<cdm::VideoFormat>(aFrame.Format());
   output.mImageWidth() = aFrame.Size().width;

@@ -1715,6 +1715,61 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
   b.mYUVColorSpace = GetFrameColorSpace();
   b.mColorRange = GetFrameColorRange();
 
+  // --- DUMP CODE START ---
+  static FILE* sDumpFile = nullptr;
+  static bool sDumpInitialized = false;
+  static int sFrameCount = 0;
+
+  if (!sDumpInitialized) {
+    sDumpInitialized = true;
+    sDumpFile = fopen("/tmp/video_capture.yuv", "wb");
+    if (sDumpFile) {
+      fprintf(stderr, "Video dimensions: %dx%d Frame Rate %d/%d\n",
+        mFrame->width, mFrame->height,
+        mCodecContext->time_base.den, mCodecContext->time_base.num
+      );
+    }
+  }
+
+  static int64_t sFirstPts = -1;
+  static int64_t sLastPts = -1;
+
+  if (sFirstPts < 0) sFirstPts = aPts;
+  sLastPts = aPts;
+  sFrameCount++;
+
+  // Print every 100 frames
+  if (sFrameCount % 100 == 0) {
+      int64_t elapsed = sLastPts - sFirstPts;  // microseconds
+      if (elapsed > 0) {
+          double fps = (sFrameCount * 1000000.0) / elapsed;
+          fprintf(stderr, "Frames: %d elapsed: %" PRId64 "us fps: %.3f\n",
+                  sFrameCount, elapsed, fps);
+      }
+  }
+
+  if (sDumpFile) {
+    int w = mFrame->width;
+    int h = mFrame->height;
+    int uvw = b.mPlanes[1].mWidth;
+    int uvh = b.mPlanes[1].mHeight;
+
+    // Y plane
+    for (int row = 0; row < h; row++) {
+      fwrite(mFrame->data[0] + row * mFrame->linesize[0], 1, w, sDumpFile);
+    }
+    // U plane
+    for (int row = 0; row < uvh; row++) {
+      fwrite(mFrame->data[1] + row * mFrame->linesize[1], 1, uvw, sDumpFile);
+    }
+    // V plane
+    for (int row = 0; row < uvh; row++) {
+      fwrite(mFrame->data[2] + row * mFrame->linesize[2], 1, uvw, sDumpFile);
+    }
+    sFrameCount++;
+  }
+  // --- DUMP CODE END ---
+
   RefPtr<VideoData> v;
 #ifdef CUSTOMIZED_BUFFER_ALLOCATION
   bool requiresCopy = false;
