@@ -605,9 +605,6 @@ void AudioStream::UpdatePlaybackRateIfNeeded() {
   }
 }
 
-#include <atomic>
-std::atomic<bool> gMediaCapturing(false);
-
 long AudioStream::DataCallback(void* aBuffer, long aFrames) {
   if (CheckThreadIdChanged() && !mSandboxed) {
     CallbackThreadRegistry::Get()->Register(mAudioThreadId,
@@ -617,21 +614,37 @@ long AudioStream::DataCallback(void* aBuffer, long aFrames) {
   // --- DUMP CODE START ---
   static FILE* sDumpFile = nullptr;
   static bool sDumpInitialized = false;
+  static bool sLastCapturing = false;
 
-  if (!sDumpInitialized) {
-    sDumpInitialized = true;
-    sDumpFile = fopen("/tmp/mediacap/netflix_audio.pcm", "wb");
-    if (sDumpFile) {
-      fprintf(stderr, "Audio capture started.\n");
+  bool shouldCapture = (access("/tmp/capture_start", F_OK) == 0);
+  if (shouldCapture != sLastCapturing) {
+      sLastCapturing = shouldCapture;
+      fprintf(stderr, "Capture %s\n", shouldCapture ? "started" : "stopped");
       fflush(stderr);
-    } else {
-      fprintf(stderr, "Failed to open audio output file\n");
-      fflush(stderr);
-      exit(146);
-    }
   }
-  if (sDumpFile) {
-    fwrite(aBuffer, sizeof(AudioDataValue), aFrames * mOutChannels, sDumpFile);
+
+  if (sLastCapturing) {  
+    if (!sDumpInitialized) {
+      sDumpInitialized = true;
+      sDumpFile = fopen("/home/ugo-riboni/mediacap/audio.pipe", "wb");
+      if (sDumpFile) {
+        fprintf(stderr, "Audio capture started.\n");
+        fflush(stderr);
+      } else {
+        fprintf(stderr, "Failed to open audio output file\n");
+        fflush(stderr);
+        exit(146);
+      }
+
+      struct timespec ts;
+      clock_gettime(CLOCK_MONOTONIC, &ts);
+      fprintf(stderr, "AUDIO_FIRST_FRAME_MS: %ld\n", 
+              ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+      fflush(stderr);
+    }
+    if (sDumpFile) {
+      fwrite(aBuffer, sizeof(AudioDataValue), aFrames * mOutChannels, sDumpFile);
+    }
   }
   // --- DUMP CODE END ---
   
